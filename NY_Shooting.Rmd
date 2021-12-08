@@ -1,0 +1,138 @@
+---
+title: "NYPD Shooting Incident Report"
+author: "Kashan Ahmed"
+date: "12/07/2021"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### This report analyzes NYC Shooting incident dataset according to different boroughs and times of the day.
+
+## Adding Libraries
+
+R Libraries`tidyverse`, `lubridate.`
+
+``` {r import_library, echo = FALSE}
+library(tidyverse)
+library(lubridate)
+```
+## Importing data from Data.Gov website.
+
+``` {r}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+NY_Shooting_Data <- read_csv(url_in)
+```
+
+
+## Data Wrangling
+
+I tried to tidy up data and changed it into appropriate data frames. Change Date and Time into DateTime. 
+
+
+``` {r}
+NY_Shooting_Data <- NY_Shooting_Data %>% 
+  select(c(OCCUR_DATE, OCCUR_TIME, BORO, STATISTICAL_MURDER_FLAG)) 
+
+NY_Shooting_Data <- NY_Shooting_Data[complete.cases(NY_Shooting_Data),] 
+  
+NY_Shooting_Data <- mutate(NY_Shooting_Data, OCCUR_DATE = mdy(OCCUR_DATE)) %>% 
+  
+  mutate(DATETIME = ymd_hms(str_c(OCCUR_DATE, OCCUR_TIME))) %>% 
+  mutate(MURDER = STATISTICAL_MURDER_FLAG) %>% 
+  select(-c(OCCUR_TIME, OCCUR_DATE, STATISTICAL_MURDER_FLAG))
+summary(NY_Shooting_Data)
+
+NY_Shooting_Data_boro <- NY_Shooting_Data %>% 
+  group_by(BORO) %>% count()
+
+NY_Shooting_Data_boro_perhr<- NY_Shooting_Data%>% 
+  mutate(TIME = hour(round_date(DATETIME, "hour")))%>% 
+  select(c(BORO, TIME)) %>% table() %>% 
+  as.data.frame()
+
+NY_Shooting_Data_boro_permn <- NY_Shooting_Data %>% 
+  mutate(MONTH = month(round_date(DATETIME, "month")))%>% 
+  select(c(BORO, MONTH)) %>% table() %>% 
+  as.data.frame()
+
+Incidents_By_Year <- NY_Shooting_Data %>% 
+  mutate(YEAR = year(round_date(DATETIME, "year")))%>% 
+  group_by(YEAR) %>% count()
+
+colnames(Incidents_By_Year) <- c("YEAR", "INCIDENTS")
+Murders_By_Year <- NY_Shooting_Data  %>% 
+  filter(MURDER == TRUE)%>% 
+  mutate(YEAR = year (round_date(DATETIME, "year"))) %>% 
+  group_by(YEAR) %>% count()
+
+colnames(Murders_By_Year) <- c ("YEAR", "MURDERS")
+By_Year <- merge(Incidents_By_Year,Murders_By_Year,by="YEAR")
+```
+
+## Visualizations
+
+
+```{r}
+NY_Shooting_Data_boro %>%
+  ggplot(aes(BORO,n))+
+  geom_col() +
+  labs(title="Shooting by Borough",
+        y="No. of Incidents", x= "Borough")
+```
+
+
+
+```{r}
+borough <- "BROOKLYN"
+NY_Shooting_Data_boro_perhr %>% filter(BORO == borough) %>% 
+  ggplot(aes(TIME,Freq))+
+  geom_col()+
+  labs(title=str_c("Shooting per hour in ", borough),
+        y="Shootings", x= "Hours")
+```
+
+```{r}
+borough <- "MANHATTAN"
+NY_Shooting_Data_boro_perhr %>% filter(BORO == borough) %>% 
+  ggplot(aes(TIME,Freq))+
+  geom_col() +
+  labs(title=str_c("Shooting per hour in ",borough),
+        y="Shootings", x= "Hours")
+```
+
+
+```{r}
+NY_Shooting_Data_boro_permn %>% 
+  ggplot(mapping = aes(x = MONTH, y = Freq)) + 
+  geom_line(aes(group = BORO)) + 
+  geom_point(aes(color = BORO))
+```
+
+### Data Modeling
+
+Linear model between Shooting Incidents and Murders `lm()` function.
+
+``` {r}
+mod <- lm(INCIDENTS ~ MURDERS, data = By_Year)
+
+summary(mod)
+
+By_Year %>% slice_min(INCIDENTS)
+By_Year %>% slice_max(INCIDENTS)
+
+By_Year_pred <- By_Year %>% 
+  mutate(pred = predict(mod))
+
+By_Year_pred %>% ggplot() + 
+  geom_point(aes(x = MURDERS, y = INCIDENTS), color = "red") +
+  geom_line(aes(x = MURDERS, y = pred), color = "green")
+```
+
+# Conclusion and Biases:
+
+I wrangled data according to different Boroughs, date & time. According to my conclusion Brooklyn seems to be most dangerous Borough. The incidents normally occur late in the evening till early mornings. As NYC is tourist city and most of the visitors go near Manhattan so it looks bit safe as compared to other places. 
+
+As I have never been to NYC so I may have some biases, I tried to be fair but I believe my emphasis on Manhattan and Brooklyn may be influenced by media.
